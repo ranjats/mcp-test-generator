@@ -6,6 +6,23 @@ export interface ProjectInfo {
     sourceFiles: SourceFileInfo[];
     packageManager: string | null;
     configFiles: string[];
+    report?: ProjectReport;
+  }
+
+  export interface ProjectReport {
+    summary?: string;
+    endpoints?: SpringEndpoint[];
+    configKeys?: string[];
+    buildTool?: "maven" | "gradle" | "unknown";
+    detected?: Record<string, unknown>;
+  }
+
+  export interface SpringEndpoint {
+    httpMethod: string;
+    path: string;
+    controllerClass: string;
+    methodName: string;
+    sourceFile: string;
   }
   
   export type ProgrammingLanguage =
@@ -13,6 +30,7 @@ export interface ProjectInfo {
     | "javascript"
     | "python"
     | "java"
+  | "go"
     | "unknown";
   
   export type ProjectFramework =
@@ -34,6 +52,7 @@ export interface ProjectInfo {
     | "vitest"
     | "pytest"
     | "junit"
+  | "go"
     | "auto";
   
   export interface SourceFileInfo {

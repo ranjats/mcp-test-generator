@@ -7,6 +7,7 @@ import {
   detectTestFramework,
 } from "../utils/language-detector.js";
 import { findSourceFiles } from "../utils/file-utils.js";
+import { detectBuildTool, extractSpringConfigKeys, extractSpringEndpoints } from "./spring-analyzer.js";
 
 export async function analyzeProject(
   projectPath: string,
@@ -47,6 +48,17 @@ export async function analyzeProject(
     sourceFiles,
     packageManager,
     configFiles,
+    report: {
+      summary: framework === "spring" ? "Spring Boot project detected" : undefined,
+      buildTool: framework === "spring" ? detectBuildTool(projectPath) : undefined,
+      endpoints: framework === "spring" ? extractSpringEndpoints(projectPath) : undefined,
+      configKeys: framework === "spring" ? extractSpringConfigKeys(projectPath) : undefined,
+      detected: {
+        language,
+        framework,
+        testFramework,
+      },
+    },
   };
 }
 

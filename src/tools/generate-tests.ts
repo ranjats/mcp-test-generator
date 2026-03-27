@@ -10,10 +10,14 @@ import { analyzeFile } from "../analyzers/function-extractor.js";
 import { generateTestSuite } from "../generators/test-generator.js";
 import { renderTestSuiteToCode } from "../utils/test-suite-renderer.js";
 import type { DescribeBlock } from "../models/test-case.js";
+import { runProjectTests } from "../utils/test-runner.js";
+import { detectBuildTool } from "../analyzers/spring-analyzer.js";
 import {
   generateTestFilePath,
   writeTestFile,
 } from "../utils/file-utils.js";
+import * as fs from "fs";
+import * as pathFs from "path";
 
 export type GenerateTestsArgs = {
   projectPath: string;
@@ -23,6 +27,9 @@ export type GenerateTestsArgs = {
   includePatterns?: string[];
   excludePatterns?: string[];
   overwrite?: boolean;
+  verify?: boolean;
+  autoFix?: boolean;
+  ensureDependencies?: boolean;
   coverageTargets?: Partial<CoverageTargets>;
 };
 
@@ -99,6 +106,30 @@ export async function handleGenerateTests(
         config.outputDir
       );
       if (!config.overwrite && source.hasExistingTests) continue;
+      suite.testFile = testFilePath;
+
+      // Attach Java dependency fields for Mockito mocks (best-effort).
+      if (source.language === "java") {
+        const firstClass = analysis.classes?.[0];
+        (suite as any).__javaProperties = firstClass?.properties ?? [];
+        (suite as any).__analysis = analysis;
+      }
+
+      // Limited auto-fix: generate correct JS/TS import path + named exports.
+      if (source.language === "typescript" || source.language === "javascript") {
+        const relImport = toPosixPath(
+          "./" +
+            path
+              .relative(path.dirname(testFilePath), source.filePath)
+              .replace(/\.(ts|tsx|js|jsx|mjs)$/, "")
+        );
+        const named = (analysis.exports ?? []).filter(Boolean);
+        suite.imports =
+          named.length > 0
+            ? [`import { ${named.join(", ")} } from "${relImport}";`]
+            : [`import * as target from "${relImport}";`];
+      }
+
       const content = renderTestSuiteToCode(
         suite,
         framework === "auto" ? "jest" : framework,
@@ -122,8 +153,87 @@ export async function handleGenerateTests(
     skippedFiles: projectInfo.sourceFiles.length - generated.length - errors.length,
     errors,
     generatedTestFiles: generated,
+    verify: null as null | {
+      command: string;
+      args: string[];
+      exitCode: number;
+      stdout: string;
+      stderr: string;
+      attemptedAutoFix: boolean;
+    },
   };
+
+  if (params.ensureDependencies && projectInfo.framework === "spring" && projectInfo.language === "java") {
+    ensureSpringTestDeps(projectPath, detectBuildTool(projectPath));
+  }
+
+  if (params.verify) {
+    const initial = await runProjectTests({
+      projectPath,
+      language: projectInfo.language,
+      testFramework: (framework === "auto" ? projectInfo.testFramework : framework) as TestFramework,
+    });
+
+    let attemptedAutoFix = false;
+    let final = initial;
+
+    // Limited auto-fix (B): only re-run after our JS/TS import-path fix pass above.
+    if (initial.exitCode !== 0 && params.autoFix) {
+      attemptedAutoFix = true;
+      final = await runProjectTests({
+        projectPath,
+        language: projectInfo.language,
+        testFramework: (framework === "auto" ? projectInfo.testFramework : framework) as TestFramework,
+      });
+    }
+
+    summary.verify = {
+      command: final.command,
+      args: final.args,
+      exitCode: final.exitCode,
+      stdout: final.stdout,
+      stderr: final.stderr,
+      attemptedAutoFix,
+    };
+  }
+
   return {
     content: [{ type: "text", text: JSON.stringify(summary, null, 2) }],
   };
+}
+
+function toPosixPath(p: string): string {
+  return p.replace(/\\/g, "/");
+}
+
+function ensureSpringTestDeps(projectPath: string, buildTool: "maven" | "gradle" | "unknown"): void {
+  if (buildTool === "maven") {
+    const pomPath = pathFs.join(projectPath, "pom.xml");
+    if (!fs.existsSync(pomPath)) return;
+    const pom = fs.readFileSync(pomPath, "utf-8");
+    if (pom.includes("spring-boot-starter-test")) return;
+    const depBlock =
+      "\n    <dependency>\n      <groupId>org.springframework.boot</groupId>\n      <artifactId>spring-boot-starter-test</artifactId>\n      <scope>test</scope>\n    </dependency>\n";
+    const updated = pom.includes("</dependencies>")
+      ? pom.replace("</dependencies>", depBlock + "  </dependencies>")
+      : pom.replace("</project>", "  <dependencies>" + depBlock + "  </dependencies>\n</project>");
+    fs.writeFileSync(pomPath, updated, "utf-8");
+    return;
+  }
+
+  if (buildTool === "gradle") {
+    const gradlePath = fs.existsSync(pathFs.join(projectPath, "build.gradle.kts"))
+      ? pathFs.join(projectPath, "build.gradle.kts")
+      : pathFs.join(projectPath, "build.gradle");
+    if (!fs.existsSync(gradlePath)) return;
+    const txt = fs.readFileSync(gradlePath, "utf-8");
+    if (txt.includes("spring-boot-starter-test")) return;
+    const depLine = gradlePath.endsWith(".kts")
+      ? "\n    testImplementation(\"org.springframework.boot:spring-boot-starter-test\")\n"
+      : "\n    testImplementation 'org.springframework.boot:spring-boot-starter-test'\n";
+    const updated = txt.includes("dependencies {")
+      ? txt.replace(/dependencies\s*\{/, (m) => m + depLine)
+      : txt + "\n\ndependencies {" + depLine + "}\n";
+    fs.writeFileSync(gradlePath, updated, "utf-8");
+  }
 }

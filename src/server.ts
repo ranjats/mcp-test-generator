@@ -27,7 +27,7 @@ export function createMCPServer(): Server {
         {
           name: "generate_all_tests",
           description:
-            "Analyzes the entire project and generates test case files for all testable source files. Supports TypeScript, JavaScript, Python, and Java projects.",
+            "Analyzes the entire project and generates test case files for all testable source files. Supports TypeScript, JavaScript, Python, Java, and Go projects.",
           inputSchema: {
             type: "object" as const,
             properties: {
@@ -37,7 +37,7 @@ export function createMCPServer(): Server {
               },
               testFramework: {
                 type: "string",
-                enum: ["jest", "mocha", "pytest", "junit", "vitest", "auto"],
+                enum: ["jest", "mocha", "pytest", "junit", "vitest", "go", "auto"],
                 description:
                   "Test framework to use. Use 'auto' to detect from project config.",
                 default: "auto",
@@ -68,6 +68,23 @@ export function createMCPServer(): Server {
               overwrite: {
                 type: "boolean",
                 description: "Whether to overwrite existing test files",
+                default: false,
+              },
+              verify: {
+                type: "boolean",
+                description: "Run the project's test runner after generating tests",
+                default: false,
+              },
+              autoFix: {
+                type: "boolean",
+                description:
+                  "If verify fails, attempt limited auto-fixes (mainly JS/TS import/path fixes) and retry once",
+                default: false,
+              },
+              ensureDependencies: {
+                type: "boolean",
+                description:
+                  "For Spring/Maven/Gradle projects, ensure required test dependencies exist before running tests",
                 default: false,
               },
               coverageTargets: {
@@ -127,12 +144,23 @@ export function createMCPServer(): Server {
               },
               testFramework: {
                 type: "string",
-                enum: ["jest", "mocha", "pytest", "junit", "vitest"],
+                enum: ["jest", "mocha", "pytest", "junit", "vitest", "go"],
                 description: "Test framework to use",
               },
               outputPath: {
                 type: "string",
                 description: "Output path for the test file",
+              },
+              verify: {
+                type: "boolean",
+                description: "Run the project's test runner after generating the test",
+                default: false,
+              },
+              autoFix: {
+                type: "boolean",
+                description:
+                  "If verify fails, attempt limited auto-fixes (mainly JS/TS import/path fixes) and retry once",
+                default: false,
               },
             },
             required: ["filePath"],

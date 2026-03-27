@@ -36,6 +36,14 @@ export function detectLanguage(projectPath: string): ProgrammingLanguage {
     return "java";
   }
 
+  // Check for Go
+  if (
+    files.includes("go.mod") ||
+    files.some((f) => f.endsWith(".go"))
+  ) {
+    return "go";
+  }
+
   // Check for JavaScript
   if (
     files.includes("package.json") ||
@@ -128,6 +136,8 @@ export function detectTestFramework(
       return "pytest";
     case "java":
       return "junit";
+    case "go":
+      return "go";
     default:
       return "jest";
   }
@@ -143,6 +153,8 @@ export function getSourceExtensions(language: ProgrammingLanguage): string[] {
       return [".py"];
     case "java":
       return [".java"];
+    case "go":
+      return [".go"];
     default:
       return [".ts", ".js"];
   }
@@ -161,6 +173,8 @@ export function getTestFileExtension(
       return "_test.py";
     case "java":
       return "Test.java";
+    case "go":
+      return "_test.go";
     default:
       return ".test.ts";
   }

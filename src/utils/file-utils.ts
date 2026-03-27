@@ -184,7 +184,21 @@ export function generateTestFilePath(
       break;
     case "java":
       testFileName = `${nameWithoutExt}Test.java`;
-      testDir = outputDir || parsed.dir.replace("src/main", "src/test");
+      if (outputDir) {
+        testDir = outputDir;
+      } else if (parsed.dir.includes(path.join("src", "main", "java"))) {
+        testDir = parsed.dir.replace(
+          path.join("src", "main", "java"),
+          path.join("src", "test", "java")
+        );
+      } else {
+        testDir = parsed.dir.replace("src/main", "src/test");
+      }
+      break;
+    case "go":
+      testFileName = `${nameWithoutExt}_test.go`;
+      // Go tests typically live alongside source files
+      testDir = parsed.dir;
       break;
     default:
       testFileName = `${nameWithoutExt}.test${parsed.ext}`;

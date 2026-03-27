@@ -9,6 +9,7 @@ import { analyzeFile } from "../analyzers/function-extractor.js";
 import { generateTestSuite } from "../generators/test-generator.js";
 import { renderTestSuiteToCode } from "../utils/test-suite-renderer.js";
 import type { DescribeBlock } from "../models/test-case.js";
+import { runProjectTests } from "../utils/test-runner.js";
 import {
   generateTestFilePath,
   writeTestFile,
@@ -18,6 +19,8 @@ export type GenerateSingleTestArgs = {
   filePath: string;
   testFramework?: TestFramework | string;
   outputPath?: string;
+  verify?: boolean;
+  autoFix?: boolean;
 };
 
 const defaultCoverageTargets: CoverageTargets = {
@@ -54,6 +57,7 @@ export async function handleGenerateSingleTest(
     : [".js", ".jsx"].includes(ext) ? "javascript"
     : ext === ".py" ? "python"
     : ext === ".java" ? "java"
+    : ext === ".go" ? "go"
     : "typescript";
   const testFramework: TestFramework =
     (params.testFramework as TestFramework) ?? "jest";
@@ -83,6 +87,12 @@ export async function handleGenerateSingleTest(
       testFramework,
       undefined
     );
+  suite.testFile = testFilePath;
+  if (language === "java") {
+    const firstClass = analysis.classes?.[0];
+    (suite as any).__javaProperties = firstClass?.properties ?? [];
+    (suite as any).__analysis = analysis;
+  }
   const content = renderTestSuiteToCode(suite, testFramework, language);
   writeTestFile(testFilePath, content);
 
@@ -90,7 +100,41 @@ export async function handleGenerateSingleTest(
     sourceFile: filePath,
     testFile: testFilePath,
     testCount,
+    verify: null as null | {
+      command: string;
+      args: string[];
+      exitCode: number;
+      stdout: string;
+      stderr: string;
+      attemptedAutoFix: boolean;
+    },
   };
+
+  if (params.verify) {
+    const initial = await runProjectTests({
+      projectPath,
+      language,
+      testFramework: testFramework as TestFramework,
+    });
+    let attemptedAutoFix = false;
+    let final = initial;
+    if (initial.exitCode !== 0 && params.autoFix) {
+      attemptedAutoFix = true;
+      final = await runProjectTests({
+        projectPath,
+        language,
+        testFramework: testFramework as TestFramework,
+      });
+    }
+    summary.verify = {
+      command: final.command,
+      args: final.args,
+      exitCode: final.exitCode,
+      stdout: final.stdout,
+      stderr: final.stderr,
+      attemptedAutoFix,
+    };
+  }
   return {
     content: [{ type: "text", text: JSON.stringify(summary, null, 2) }],
   };
